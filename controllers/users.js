@@ -1,4 +1,5 @@
 const {request, response} = require('express');
+const bcrypt = require('bcrypt')
 const usersModel = require('../models/users');
 const pool = require('../db');
 
@@ -81,7 +82,10 @@ const addUser = async (req = request, res = response) => {
         return;
     }
 
-    const user = [username, email, password, name, lastname, phone_number, role_id, is_active]
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash (password,saltRounds);
+
+    const user = [username, email, passwordHash, name, lastname, phone_number, role_id, is_active]
 
     let conn;
 
@@ -150,24 +154,34 @@ let user = [
 
   try {
     conn = await pool.getConnection();
-    const [userExist] = await conn.query()
+    const [userExist] = await conn.query(
     usersModel.getByID,
     [id],
     (err) => {throw err;}
-
+    )
   if (!userExist ||  userExist.is_active == 0) {
     res.status(404).json({msg:'User not found'});
     return;
   }
 
-  if (username == userExist.username){
-    res.status(409).json({msg:'Usrname alredy exist'});
-    return;
+  const [usernameUser] = await conn.query(
+    usersModel.getByUsername,
+    [username],
+    (err) => {if (err) throw err;}
+  );
+  if (usernameUser) {
+      res.status(409).json({msg: `User with username ${username} alredy exist`});
+      return;
   }
 
-  if (username == userExist.email){
-    res.status(409).json({msg:'Email alredy exist'});
-    return;
+  const [emailUser] = await conn.query(
+      usersModel.getByEmail,
+      [email],
+      (err) => {if (err) throw err;}
+  );
+  if (emailUser) {
+      res.status(409).json({msg: `User with username ${email} alredy exist`});
+      return;
   }
 
   let oldUser = [
@@ -187,7 +201,7 @@ let user = [
     };
   })
 
-  const [userUpdate] = conn.query(
+  const userUpdate = conn.query(
     usersModel.updateRow,
     [...user,id],
     (err) => {
@@ -209,42 +223,42 @@ let user = [
 };
 //termina movida
 
-const deleteUser = async(req = request, res= response) =>{
-   let conn;
-   const{id} = req.params;
 
-   
-   try{
-    conn= await pool.getConnection();
 
-    const [userExists] = await conn.query(
-        usersModel.getByID,
-        [id],
-        (err) => {throw err;}
-       )
-       if(!userExists|| userExists.is_active === 0){
-        res.status(404).json({msg : 'user not found'});
-        return;
-       }
-    
-    
-       const userDelete = await conn.query(
-        usersModel.deleteRow,
-        [id],
-        (err) => {if (err) throw err;}
-       )
-    
-       if (userDelete.affectedRows === 0) {
-        throw new Error ({msg: 'Failed to delete user' })
-       };
-    
+const deleteUser = async (req =request, res =response) => {
+  let conn;
+  const {id} = req.params;
 
-   }catch(error){
+  try{
+    conn = await pool.getConnection();
+
+    const [userExits] = await conn.query(
+      usersModel.getByID,
+      [id],
+      (err) => {throw err;}
+    )
+    if (!userExits || userExits.is_active == 0){
+      res.status(404).json({msg:'User not found'});
+      return;
+    }
+
+    const userDeleted = await conn.query(
+      usersModel.deleteRow,
+      [id],
+      (err) => {if (err) throw err;}
+    )
+    if (userDeleted.affectedRows == 0) {
+      throw new Error ({message: 'Failed to delete user'})
+    };
+
+    res.json({msg:'User deleted successfully'});
+
+  } catch (error) {
     console.log(error);
-    res.status(500).json(error)
-   }finally{
-    if(conn)conn.end();
-   }
+    res.status(500).json(error);
+  } finally {
+    if (conn) conn.end();
+  }
 }
 
-module.exports = {listUsers, listUserByID, addUser, updateUser, deleteUser}
+module.exports = {listUsers, listUserByID, addUser, updateUser, deleteUser};
